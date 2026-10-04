@@ -41,6 +41,18 @@ sudo certbot --nginx -d wiki.example.com
 
 ## Шаг 4. Как обновлять контент
 
+Проще всего — одна команда прямо из GitHub (sparse checkout, качается
+только `wiki/`; на чистой машине сам перейдёт к полной установке):
+
+```bash
+sudo bash update.sh [domain]
+```
+
+Он копирует свежие `docs/` + `mkdocs.yml`, обновляет pip-зависимости,
+рестартит сервис и громко упадёт, если `/` ответит не `en` или `/ru/` не `ru`.
+
+Ручной метод (то же самое по шагам):
+
 ```bash
 # на своей машине правите docs/<en|ru>/*.md, пакуете заново:
 Compress-Archive -Path wiki -DestinationPath fastscript-wiki.zip -Force
