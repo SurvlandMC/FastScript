@@ -62,6 +62,7 @@ plugins:
       languages:
         - locale: en
           name: English
+          default: true
           build: true
         - locale: ru
           name: Русский
