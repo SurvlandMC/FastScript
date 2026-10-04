@@ -34,6 +34,8 @@ public final class FastScriptPlugin extends JavaPlugin implements Listener, TabE
 
     private static final String SCRIPT_DIRECTORY = "scripts";
     private static final String VARIABLE_FILE = "variables.yml";
+    /** YAML section holding per-player variables keyed by UUID text. */
+    private static final String PLAYER_SECTION = "__players__";
 
     private ScriptEngine engine;
     private PluginHost host;
@@ -47,6 +49,8 @@ public final class FastScriptPlugin extends JavaPlugin implements Listener, TabE
         createDefaultScriptIfMissing();
         loadVariables();
         reload();
+        // reload() already (re)registers this listener; registering twice would
+        // run every event handler twofold after startup.
         // Parameterless triggers such as `on server start` have no Bukkit event behind
         // them, so fire them once here. A later `/fastscript reload` intentionally does
         // not re-fire: reload recompiles, it does not restart the server.
@@ -57,7 +61,6 @@ public final class FastScriptPlugin extends JavaPlugin implements Listener, TabE
             root.setExecutor(this);
             root.setTabCompleter(this);
         }
-        Bukkit.getPluginManager().registerEvents(this, this);
         getLogger().info("FastScript enabled: " + engine.scripts().size() + " script(s), "
                 + engine.triggerCount() + " trigger(s), " + engine.commandNames().size() + " script command(s)");
         for (String error : engine.errors()) {
@@ -81,6 +84,16 @@ public final class FastScriptPlugin extends JavaPlugin implements Listener, TabE
 
         ScriptEngine.LoadResult result = engine.loadDirectory(scriptDirectory());
         bindCommands();
+        for (var entry : engine.scripts().entrySet()) {
+            for (String trigger : entry.getValue().handle().triggers().keySet()) {
+                String normalised = ScriptEvents.normalise(trigger);
+                if (!normalised.equals("server start")
+                        && !ScriptEvents.supportedNames().contains(normalised)) {
+                    getLogger().warning("script '" + entry.getKey() + "' uses unknown event '"
+                            + trigger + "'; it will never fire");
+                }
+            }
+        }
         return result;
     }
 
@@ -123,6 +136,9 @@ public final class FastScriptPlugin extends JavaPlugin implements Listener, TabE
             }
             command.setExecutor(this);
             command.setTabCompleter(this);
+            if (spec.permission() != null && !spec.permission().isBlank()) {
+                command.setPermission(spec.permission());
+            }
             boundCommands.add(spec.name());
         }
     }
@@ -151,10 +167,8 @@ public final class FastScriptPlugin extends JavaPlugin implements Listener, TabE
             return;
         }
         var player = ScriptEvents.playerFor(event);
+        // Cancellation is applied to this event object by the engine itself.
         engine.dispatch(eventName, player, event);
-        if (host.consumeCancelled() && event instanceof org.bukkit.event.Cancellable cancellable) {
-            cancellable.setCancelled(true);
-        }
     }
 
     /** True when at least one script asked for this event, so the listener body can bail early. */
@@ -169,7 +183,7 @@ public final class FastScriptPlugin extends JavaPlugin implements Listener, TabE
      * {@code @EventHandler} methods are compatible with every server and version in use, so the
      * engine pays only a map lookup when no script is interested.</p>
      */
-    @org.bukkit.event.EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    @org.bukkit.event.EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onJoin(org.bukkit.event.player.PlayerJoinEvent event) {
         dispatch("join", event);
     }
@@ -189,42 +203,42 @@ public final class FastScriptPlugin extends JavaPlugin implements Listener, TabE
         dispatch("respawn", event);
     }
 
-    @org.bukkit.event.EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    @org.bukkit.event.EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onChat(org.bukkit.event.player.AsyncPlayerChatEvent event) {
         dispatch("chat", event);
     }
 
-    @org.bukkit.event.EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    @org.bukkit.event.EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onCommandPreprocess(PlayerCommandPreprocessEvent event) {
         dispatch("command", event);
     }
 
-    @org.bukkit.event.EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    @org.bukkit.event.EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onInteract(org.bukkit.event.player.PlayerInteractEvent event) {
         dispatch("interact", event);
     }
 
-    @org.bukkit.event.EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    @org.bukkit.event.EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onMove(org.bukkit.event.player.PlayerMoveEvent event) {
         dispatch("move", event);
     }
 
-    @org.bukkit.event.EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    @org.bukkit.event.EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBlockBreak(org.bukkit.event.block.BlockBreakEvent event) {
         dispatch("break block", event);
     }
 
-    @org.bukkit.event.EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    @org.bukkit.event.EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBlockPlace(org.bukkit.event.block.BlockPlaceEvent event) {
         dispatch("place block", event);
     }
 
-    @org.bukkit.event.EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    @org.bukkit.event.EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onDropItem(org.bukkit.event.player.PlayerDropItemEvent event) {
         dispatch("drop item", event);
     }
 
-    @org.bukkit.event.EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    @org.bukkit.event.EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onDamage(org.bukkit.event.entity.EntityDamageEvent event) {
         dispatch("damage", event);
     }
@@ -240,11 +254,37 @@ public final class FastScriptPlugin extends JavaPlugin implements Listener, TabE
         if (engine == null) {
             return true;
         }
+        String cmdName = command.getName().toLowerCase(Locale.ROOT);
+        if (!commandAllowed(engine.commandSpecs(), cmdName, sender::hasPermission)) {
+            reply(sender, "You don't have permission to use /" + command.getName() + ".");
+            return true;
+        }
         Object[] forwarded = new Object[args.length + 1];
         forwarded[0] = sender;
         System.arraycopy(args, 0, forwarded, 1, args.length);
-        engine.dispatchCommand(command.getName().toLowerCase(Locale.ROOT), forwarded);
+        engine.dispatchCommand(cmdName, forwarded);
         return true;
+    }
+
+    /**
+     * Whether a sender may run a script command. When several scripts declare the
+     * same label, one open (or permitted) declaration is enough to allow it; only
+     * when every declaration restricts access and none matches is the sender denied.
+     */
+    public static boolean commandAllowed(List<CommandSpec> specs, String label,
+            java.util.function.Predicate<String> hasPermission) {
+        boolean restricted = false;
+        for (CommandSpec spec : specs) {
+            if (!spec.name().equalsIgnoreCase(label)) {
+                continue;
+            }
+            if (spec.permission() == null || spec.permission().isBlank()
+                    || hasPermission.test(spec.permission())) {
+                return true;
+            }
+            restricted = true;
+        }
+        return !restricted;
     }
 
     private boolean handleAdmin(CommandSender sender, String[] args) {
@@ -357,6 +397,9 @@ public final class FastScriptPlugin extends JavaPlugin implements Listener, TabE
                     org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(reader);
             var globals = new java.util.LinkedHashMap<String, Object>();
             for (String key : yaml.getKeys(false)) {
+                if (key.equals(PLAYER_SECTION)) {
+                    continue;
+                }
                 Object value = yaml.get(key);
                 if (value instanceof org.bukkit.configuration.ConfigurationSection section) {
                     globals.put(key, new java.util.LinkedHashMap<>(section.getValues(false)));
@@ -365,6 +408,12 @@ public final class FastScriptPlugin extends JavaPlugin implements Listener, TabE
                 }
             }
             host.variables().restoreGlobals(globals);
+            Object players = yaml.get(PLAYER_SECTION);
+            if (players instanceof java.util.Map<?, ?> map) {
+                var restored = new java.util.LinkedHashMap<String, Object>();
+                map.forEach((key, value) -> restored.put(String.valueOf(key), value));
+                host.variables().restorePlayers(restored);
+            }
         } catch (IOException error) {
             getLogger().warning("cannot read variables: " + error.getMessage());
         }
@@ -379,6 +428,7 @@ public final class FastScriptPlugin extends JavaPlugin implements Listener, TabE
             org.bukkit.configuration.file.YamlConfiguration yaml =
                     new org.bukkit.configuration.file.YamlConfiguration();
             host.variables().snapshotGlobals().forEach(yaml::set);
+            yaml.set(PLAYER_SECTION, host.variables().snapshotPlayers());
             yaml.save(variableFile());
         } catch (IOException error) {
             getLogger().warning("cannot save variables: " + error.getMessage());

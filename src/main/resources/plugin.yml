@@ -17,6 +17,7 @@ commands:
   heal:
     description: Declared by a script
     usage: /heal <player>
+    permission: fastscript.heal
   kit:
     description: Declared by a script
     usage: /kit

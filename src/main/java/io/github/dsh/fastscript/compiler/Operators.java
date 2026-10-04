@@ -119,6 +119,11 @@ public final class Operators {
             code.invokeStatic(VALUES_OWNER, "toBool", "(Ljava/lang/Object;)Z");
             return;
         }
+        if (from.isBool() && to.isText()) {
+            code.box(from.jvmType());
+            code.invokeStatic(VALUES_OWNER, "toText", "(Ljava/lang/Object;)Ljava/lang/String;");
+            return;
+        }
         throw new IllegalStateException("cannot convert " + from.jvmType() + " to " + to.jvmType());
     }
 
@@ -170,9 +175,9 @@ public final class Operators {
             case ">=" -> ordered(code, ">=", left, right);
             case "contains" -> callHelper(code, "contains", "(Ljava/lang/Object;Ljava/lang/Object;)Z",
                     left, right);
-            // Both shift-like operators are explicit text concatenation.
-            case "<<<", ">>>" -> callHelper(code, "add",
-                    "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;", left, right);
+            // Both shift-like operators are explicit text concatenation, even for numbers.
+            case "<<<", ">>>" -> callHelper(code, "concat",
+                    "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/String;", left, right);
             case "and" -> logical(code, left, right, true);
             case "or" -> logical(code, left, right, false);
             default -> throw new IllegalArgumentException("unsupported operator '" + operator + "'");
@@ -202,8 +207,9 @@ public final class Operators {
             default -> "greaterOrEqual";
         };
         if (left.isNumber() && right.isNumber()) {
-            // DCMPG normalises the result to -1/0/1, so mirrored operators share one instruction.
-            // The jump leads to the `true` branch, hence: `<` fires on -1, `>` on 1.
+            // DCMPG normalises the result to -1/0/1 and the jump leads to the `true`
+            // branch. NaN sorts to +1 here, exactly like Double.compare, which is what
+            // the dynamic helpers use — so both paths agree on NaN on every operator.
             code.dcmpg();
             int opcode = switch (operator) {
                 case "<" -> Opcodes.IFLT;
@@ -305,6 +311,7 @@ public final class Operators {
                         : Ast.Type.ANY;
             }
             case "-", "*", "/", "%" -> Ast.Type.NUMBER;
+            case "<<<", ">>>" -> Ast.Type.TEXT;
             case "==", "!=", "<", ">", "<=", ">=", "contains", "is", "and", "or" -> Ast.Type.BOOL;
             default -> Ast.Type.ANY;
         };

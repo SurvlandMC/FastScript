@@ -2,6 +2,7 @@ package io.github.dsh.fastscript.engine;
 
 import io.github.dsh.fastscript.core.EvalException;
 import io.github.dsh.fastscript.core.Values;
+import io.github.dsh.fastscript.ast.Ast;
 import io.github.dsh.fastscript.engine.ScriptLoader.LoadException;
 import io.github.dsh.fastscript.engine.ScriptLoader.Loaded;
 import io.github.dsh.fastscript.runtime.CommandSpec;
@@ -13,8 +14,6 @@ import io.github.dsh.fastscript.runtime.ScriptSource;
 import io.github.dsh.fastscript.runtime.VariableStore;
 import java.io.IOException;
 import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -28,6 +27,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 import org.bukkit.entity.Player;
 
@@ -41,17 +41,14 @@ import org.bukkit.entity.Player;
 public final class ScriptEngine {
 
     private static final int ERROR_HISTORY = 100;
-    private static final MethodType HANDLER_TYPE =
-            MethodType.methodType(void.class, Object[].class, ExecContext.class);
 
     private final Host host;
     private final ScriptLoader loader = new ScriptLoader("io.github.dsh.fastscript.compiled");
-    private final Map<String, Loaded> scripts = new LinkedHashMap<>();
-    private final Map<String, List<Handler>> byEvent = new LinkedHashMap<>();
-    private final Map<String, List<Handler>> byCommand = new LinkedHashMap<>();
-    private final Map<String, ExecContext> contexts = new LinkedHashMap<>();
+    // Concurrent maps: event threads (for example async chat) read while reload swaps.
+    private final Map<String, Loaded> scripts = new ConcurrentHashMap<>();
+    private final Map<String, List<Handler>> byEvent = new ConcurrentHashMap<>();
+    private final Map<String, List<Handler>> byCommand = new ConcurrentHashMap<>();
     private final Deque<String> errors = new ArrayDeque<>();
-    private final MethodHandle invoker;
 
     /** A compiled handler together with the script that owns it. */
     private record Handler(Loaded script, MethodHandle method) {
@@ -59,7 +56,6 @@ public final class ScriptEngine {
 
     public ScriptEngine(Host host) {
         this.host = host;
-        this.invoker = MethodHandles.spreadInvoker(HANDLER_TYPE, 0);
         Functions.registerCompilerEntries();
     }
 
@@ -67,11 +63,11 @@ public final class ScriptEngine {
 
     /** Loads every {@code .fs} file under {@code directory}, replacing the current set. */
     public LoadResult loadDirectory(Path directory) {
-        List<ScriptSource> sources = new ArrayList<>();
         if (!Files.isDirectory(directory)) {
-            errors.add("script directory does not exist: " + directory);
-            return load(sources);
+            return new LoadResult(scripts.size(), 0,
+                    List.of("script directory does not exist: " + directory));
         }
+        List<ScriptSource> sources = new ArrayList<>();
         try (Stream<Path> stream = Files.walk(directory)) {
             List<Path> files = stream.filter(Files::isRegularFile)
                     .filter(path -> path.getFileName().toString().endsWith(".fs"))
@@ -84,39 +80,79 @@ public final class ScriptEngine {
                         Files.readString(file, StandardCharsets.UTF_8), file.toString()));
             }
         } catch (IOException error) {
-            errors.add("cannot read scripts in " + directory + ": " + error.getMessage());
+            return new LoadResult(scripts.size(), 0,
+                    List.of("cannot read scripts in " + directory + ": " + error.getMessage()));
         }
         return load(sources);
     }
 
-    /** Replaces the loaded script set. Failures are collected instead of thrown. */
+    /**
+     * Replaces the loaded script set. The new set is fully compiled first and the
+     * active maps are swapped only on success, so a broken script can never wipe
+     * the working handlers. Load failures are reported in the returned result and
+     * never touch the runtime error history.
+     */
     public LoadResult load(List<ScriptSource> sources) {
-        byEvent.clear();
-        byCommand.clear();
-        contexts.clear();
-        scripts.clear();
-
-        List<Loaded> loaded = List.of();
+        List<Loaded> loaded;
         try {
             loaded = loader.load(sources);
         } catch (LoadException error) {
-            errors.add(error.getMessage());
+            return new LoadResult(0, sources.size(), List.of(error.getMessage()));
         }
 
+        Map<String, Loaded> newScripts = new LinkedHashMap<>();
+        Map<String, List<Handler>> newByEvent = new LinkedHashMap<>();
+        Map<String, List<Handler>> newByCommand = new LinkedHashMap<>();
         for (Loaded script : loaded) {
             String id = script.handle().id();
-            scripts.put(id, script);
-            contexts.put(id, new ExecContext(host, null, null, new Object[0], id, ""));
+            newScripts.put(id, script);
             for (Map.Entry<String, MethodHandle> entry : script.triggers().entrySet()) {
-                byEvent.computeIfAbsent(entry.getKey(), key -> new ArrayList<>())
+                newByEvent.computeIfAbsent(entry.getKey(), key -> new ArrayList<>())
                         .add(new Handler(script, entry.getValue()));
             }
             for (Map.Entry<String, MethodHandle> entry : script.commands().entrySet()) {
-                byCommand.computeIfAbsent(entry.getKey(), key -> new ArrayList<>())
+                newByCommand.computeIfAbsent(entry.getKey(), key -> new ArrayList<>())
                         .add(new Handler(script, entry.getValue()));
             }
         }
-        return new LoadResult(scripts.size(), sources.size(), List.copyOf(errors));
+        scripts.clear();
+        scripts.putAll(newScripts);
+        byEvent.clear();
+        byEvent.putAll(newByEvent);
+        byCommand.clear();
+        byCommand.putAll(newByCommand);
+        for (Loaded script : loaded) {
+            seedGlobals(script);
+        }
+        return new LoadResult(scripts.size(), sources.size(), List.of());
+    }
+
+    /**
+     * Seeds literal global initializers ({@code $balance = 100}) for names absent
+     * from the store. Restored (saved) values always win. Non-literal initializers
+     * need runtime evaluation, which loading cannot provide, so they are reported
+     * instead of being silently dropped.
+     */
+    private void seedGlobals(Loaded script) {
+        for (Ast.Decl declaration : script.parsed().declarations()) {
+            if (!(declaration instanceof Ast.GlobalVarDecl global) || global.playerScoped()) {
+                continue;
+            }
+            if (global.initial() == null || host.variables().has(global.name())) {
+                continue;
+            }
+            if (global.initial() instanceof Ast.Literal literal && literal.value() != null) {
+                host.variables().set(global.name(), literal.value());
+                continue;
+            }
+            synchronized (errors) {
+                errors.addLast(script.handle().sourceName() + ": non-literal initializer for $"
+                        + global.name() + " is ignored; assign it inside a handler");
+                while (errors.size() > ERROR_HISTORY) {
+                    errors.removeFirst();
+                }
+            }
+        }
     }
 
     /**
@@ -148,16 +184,16 @@ public final class ScriptEngine {
     /** Invokes every handler registered for a command label. */
     public void dispatchCommand(String label, Object[] arguments) {
         List<Handler> handlers = byCommand.get(label.toLowerCase(java.util.Locale.ROOT));
-        if (handlers == null) {
+        if (handlers == null || arguments.length == 0) {
             return;
         }
-        Player player = arguments.length > 0 && arguments[0] instanceof Player candidate ? candidate : null;
-        // Command arguments become the handler's argument array: args[0] is the sender, the
-        // rest are the positional arguments, so they can be appended without copying later.
+        Player player = arguments[0] instanceof Player candidate ? candidate : null;
+        // Layout matches generated code: args[0] is the sender, args[1] the (absent)
+        // event, args[2 + i] the positional arguments.
         Object[] handlerArguments = new Object[arguments.length + 1];
-        handlerArguments[0] = player;
+        handlerArguments[0] = arguments[0];
         handlerArguments[1] = null;
-        System.arraycopy(arguments, 0, handlerArguments, 2, arguments.length);
+        System.arraycopy(arguments, 1, handlerArguments, 2, arguments.length - 1);
         for (Handler handler : handlers) {
             invoke(handler, handlerArguments, player, arguments);
         }
@@ -169,29 +205,25 @@ public final class ScriptEngine {
     }
 
     private void invoke(Handler handler, Object[] handlerArguments, Player player, Object[] commandArguments) {
-        ExecContext context = contexts.get(handler.script().handle().id());
-        if (context == null) {
-            return;
-        }
-        context.reset();
-        if (commandArguments == null) {
-            context.setArguments(handlerArguments);
-            context.setEvent(handlerArguments.length > 1 ? handlerArguments[1] : null);
-        } else {
-            // The generated code reads arguments through ctx.arg(n), which addresses the
-            // context array directly, so command arguments must live there verbatim.
-            context.setArguments(handlerArguments);
-            context.setEvent(null);
-        }
-        context.setPlayer(player);
+        // A fresh context per invocation: handlers can nest (an effect may fire another
+        // event) and event threads run concurrently, so sharing one context corrupts
+        // the outer call. Allocation here is one small object per event, off the hot path.
+        Object event = commandArguments == null && handlerArguments.length > 1
+                ? handlerArguments[1]
+                : null;
+        ExecContext context = new ExecContext(host, player, event, handlerArguments,
+                handler.script().handle().id(), handler.script().handle().sourceName());
         context.setHandler(handler.method());
-        context.setHandlerName(handler.script().handle().sourceName());
         try {
-            invoker.invokeExact(handlerArguments, context);
+            handler.method().invokeExact(handlerArguments, context);
         } catch (EvalException error) {
             report(handler, error.getMessage());
         } catch (Throwable error) {
             report(handler, String.valueOf(error));
+        }
+        // Cancellation belongs to this event object only, never to a shared flag.
+        if (context.cancelled() && event instanceof org.bukkit.event.Cancellable cancellable) {
+            cancellable.setCancelled(true);
         }
     }
 

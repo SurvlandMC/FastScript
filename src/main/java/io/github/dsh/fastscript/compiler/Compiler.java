@@ -25,6 +25,7 @@ import io.github.dsh.fastscript.ast.Ast.LoopTimes;
 import io.github.dsh.fastscript.ast.Ast.PlayerTarget;
 import io.github.dsh.fastscript.ast.Ast.PlayerVar;
 import io.github.dsh.fastscript.ast.Ast.Property;
+import io.github.dsh.fastscript.ast.Ast.PropertyTarget;
 import io.github.dsh.fastscript.ast.Ast.Return;
 import io.github.dsh.fastscript.ast.Ast.Script;
 import io.github.dsh.fastscript.ast.Ast.Stop;
@@ -69,6 +70,7 @@ import org.objectweb.asm.Opcodes;
 public final class Compiler {
 
     private static final String CONTEXT_OWNER = Builtins.CONTEXT_OWNER;
+    private static final String PLAYER_ACCESS_OWNER = "io/github/dsh/fastscript/runtime/PlayerAccess";
     private static final String HANDLE_OWNER = "io/github/dsh/fastscript/runtime/ScriptHandle";
     private static final String HANDLE_DESC = "L" + HANDLE_OWNER + ";";
     private static final String TRIGGER_DESC = "Lio/github/dsh/fastscript/runtime/TriggerSpec;";
@@ -173,6 +175,7 @@ public final class Compiler {
                         case NUMBER -> "D";
                         case TEXT -> STRING_DESC;
                         case BOOL -> "Z";
+                        case VOID -> "V";
                         default -> OBJECT_DESC;
                     });
                     functions.put(function.name(), new FunctionSignature(function.name(),
@@ -354,11 +357,93 @@ public final class Compiler {
     private void compileScoped(MethodState state, List<Stmt> statements, Body body) {
         int savedNext = state.nextLocal;
         state.scopes.push(new LinkedHashMap<>());
-        for (Stmt statement : statements) {
-            compileStatement(state, statement, body);
+        // A nested block may not run (or may repeat), so stores inside never narrow types.
+        pinAssignedLocals(state, statements);
+        state.conditionalDepth++;
+        try {
+            for (Stmt statement : statements) {
+                compileStatement(state, statement, body);
+            }
+        } finally {
+            state.conditionalDepth--;
         }
         state.scopes.pop();
         state.nextLocal = savedNext;
+    }
+
+    /**
+     * Degrades every script local assigned anywhere inside the given statements before
+     * the body is compiled. Reads are emitted in program order, so without this a read
+     * earlier in the body would specialize for a kind that a later write (or the next
+     * iteration) invalidates. Only plain locals carry inferred kinds; globals, player
+     * variables and containers are always dynamic.
+     */
+    private void pinAssignedLocals(MethodState state, List<Stmt> statements) {
+        for (Stmt statement : statements) {
+            switch (statement) {
+                case Assign assign -> {
+                    if (assign.target() instanceof LocalTarget local) {
+                        Storage storage = state.resolve(local.name());
+                        if (storage != null) {
+                            storage.pinDynamic();
+                        }
+                    }
+                }
+                case Condition condition -> {
+                    pinAssignedLocals(state, condition.then());
+                    pinAssignedLocals(state, condition.otherwise());
+                }
+                case While loop -> pinAssignedLocals(state, loop.body());
+                case LoopTimes loop -> pinAssignedLocals(state, loop.body());
+                case ForEach loop -> pinAssignedLocals(state, loop.body());
+                case Ast.ExpressionStmt expression -> pinExprLocals(state, expression.expression());
+                case Ast.Return returned -> {
+                    if (returned.value() != null) {
+                        pinExprLocals(state, returned.value());
+                    }
+                }
+                default -> {
+                }
+            }
+        }
+    }
+
+    /** Pins locals modified through {@code ++}/{@code --} inside an expression. */
+    private void pinExprLocals(MethodState state, Expr expression) {
+        switch (expression) {
+            case Unary unary -> {
+                if (unary.operator().endsWith("++") || unary.operator().endsWith("--")) {
+                    if (unary.operand() instanceof Local local) {
+                        Storage storage = state.resolve(local.name());
+                        if (storage != null) {
+                            storage.pinDynamic();
+                        }
+                    }
+                }
+                pinExprLocals(state, unary.operand());
+            }
+            case Binary binary -> {
+                pinExprLocals(state, binary.left());
+                pinExprLocals(state, binary.right());
+            }
+            case Call call -> {
+                for (Expr argument : call.arguments()) {
+                    pinExprLocals(state, argument);
+                }
+            }
+            case Property property -> pinExprLocals(state, property.receiver());
+            case Index index -> {
+                pinExprLocals(state, index.receiver());
+                pinExprLocals(state, index.key());
+            }
+            case Ternary ternary -> {
+                pinExprLocals(state, ternary.test());
+                pinExprLocals(state, ternary.whenTrue());
+                pinExprLocals(state, ternary.whenFalse());
+            }
+            default -> {
+            }
+        }
     }
 
     private void compileStatement(MethodState state, Stmt statement, Body body) {
@@ -400,7 +485,7 @@ public final class Compiler {
             }
             case LoopTimes loop -> compileLoopTimes(state, loop, body);            case ForEach loop -> compileForEach(state, loop, body);
             case Effect effect -> compileEffect(state, effect.name(), effect.arguments(), effect.pos());
-            case Stop ignored -> state.code.returnValue("V");
+            case Stop ignored -> stop(state);
             case BreakLoop ignored -> {
                 requireLoop(state, statement.pos(), "break");
                 state.code.jump(Opcodes.GOTO, state.loops.peek().breakTarget());
@@ -484,8 +569,14 @@ public final class Compiler {
         state.scopes.push(new LinkedHashMap<>());
         state.scopes.peek().put("loop-index", new Storage.DoubleLocal(index));
         state.loops.push(new LoopLabels(advance, done));
-        for (Stmt statement : loop.body()) {
-            compileStatement(state, statement, body);
+        pinAssignedLocals(state, loop.body());
+        state.conditionalDepth++;
+        try {
+            for (Stmt statement : loop.body()) {
+                compileStatement(state, statement, body);
+            }
+        } finally {
+            state.conditionalDepth--;
         }
         state.loops.pop();
         state.scopes.pop();
@@ -530,8 +621,14 @@ public final class Compiler {
         state.scopes.push(new LinkedHashMap<>());
         state.scopes.peek().put(loop.variable(), new Storage.ObjectLocal(element));
         state.loops.push(new LoopLabels(advance, done));
-        for (Stmt statement : loop.body()) {
-            compileStatement(state, statement, body);
+        pinAssignedLocals(state, loop.body());
+        state.conditionalDepth++;
+        try {
+            for (Stmt statement : loop.body()) {
+                compileStatement(state, statement, body);
+            }
+        } finally {
+            state.conditionalDepth--;
         }
         state.loops.pop();
         state.scopes.pop();
@@ -540,6 +637,29 @@ public final class Compiler {
         state.code.jump(Opcodes.GOTO, test);
         state.code.label(done);
         
+    }
+
+    /**
+     * Stops the handler with the function's default value when inside a function,
+     * so {@code stop} in a typed function returns a well-typed value instead of
+     * emitting a bare {@code RETURN} into a value-returning method.
+     */
+    private void stop(MethodState state) {
+        switch (state.returnType) {
+            case NUMBER -> {
+                state.code.dconst(0);
+                state.code.returnValue(Code.DOUBLE);
+            }
+            case BOOL -> {
+                state.code.iconst(0);
+                state.code.returnValue(Code.BOOL);
+            }
+            case VOID -> state.code.returnValue("V");
+            default -> {
+                state.code.aconst(null);
+                state.code.returnValue(OBJECT_DESC);
+            }
+        }
     }
 
     private void compileReturn(MethodState state, Return statement) {
@@ -567,7 +687,22 @@ public final class Compiler {
     private void compileEffect(MethodState state, String name, List<Expr> arguments, Ast.Pos pos) {
         Builtins.BuiltinSpec spec = Builtins.lookup(name, arguments.size());
         if (spec == null) {
-            throw error(pos, "unknown statement or function '" + name + "'");
+            // A lone user-function call is parsed as an effect as well; route it to the
+            // script function with the result discarded, instead of reporting it unknown.
+            FunctionSignature signature = functions.get(name);
+            if (signature == null) {
+                throw error(pos, "unknown statement or function '" + name + "'");
+            }
+            if (signature.parameters().size() != arguments.size()) {
+                throw error(pos, "function '" + name + "' expects "
+                        + signature.parameters().size() + " argument(s), got " + arguments.size());
+            }
+            for (Expr argument : arguments) {
+                pushReference(state, argument);
+            }
+            state.code.invokeStatic(className, signature.methodName(), signature.descriptor());
+            discard(state, Operators.repOf(signature.returnType()));
+            return;
         }
         Operators.Rep produced = emitCall(state, name, arguments, spec, pos);
         if (!produced.isVoid()) {
@@ -649,10 +784,8 @@ public final class Compiler {
             case Binary binary -> pushBinary(state, binary);
             case Unary unary -> pushUnary(state, unary);
             case Call call -> pushCall(state, call);
-            case Property property -> {
-                requireContext(state, property.pos(), "property reads");
-                yield pushLikeGet(state, property.receiver(), property.name());
-            }
+            case Property property -> pushProperty(state,
+                    new PropertyTarget(property.receiver(), property.name(), property.pos()));
             case Index index -> {
                 requireContext(state, index.pos(), "index reads");
                 yield pushLikeGet(state, index.receiver(), index.key());
@@ -700,12 +833,16 @@ public final class Compiler {
 
         Ast.Type leftKind = kindOf(state, binary.left());
         Ast.Type rightKind = kindOf(state, binary.right());
-        boolean numeric = leftKind == Ast.Type.NUMBER && rightKind == Ast.Type.NUMBER;
+        boolean shifts = operator.equals("<<<") || operator.equals(">>>");
+        boolean numeric = leftKind == Ast.Type.NUMBER && rightKind == Ast.Type.NUMBER && !shifts;
+        // Division and modulo always go through the helpers: the primitive instructions
+        // produce Infinity/NaN where the documented contract promises a loud error.
+        boolean primitive = numeric && !operator.equals("/") && !operator.equals("%");
         boolean concatenation = operator.equals("+")
                 && !numeric
                 && (leftKind == Ast.Type.TEXT || rightKind == Ast.Type.TEXT);
 
-        if (numeric) {
+        if (primitive) {
             // Both operands are provably numbers, so this compiles to primitive instructions.
             pushExpression(state, binary.left(), Operators.Rep.NUMBER);
             pushExpression(state, binary.right(), Operators.Rep.NUMBER);
@@ -733,7 +870,13 @@ public final class Compiler {
 
         Operators.Rep left = boxedPush(state, binary.left(), leftKind);
         Operators.Rep right = boxedPush(state, binary.right(), rightKind);
-        if (concatenation || operator.equals("<<<") || operator.equals(">>>")) {
+        if (shifts) {
+            // Explicit text concatenation, even for two numbers ("1" >>> "2" is "12").
+            state.code.invokeStatic(Operators.VALUES_OWNER, "concat",
+                    "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/String;");
+            return Operators.Rep.TEXT;
+        }
+        if (concatenation) {
             // Concatenation always goes through the helper, so numbers, booleans and nulls all
             // render the way scripts expect. The result is a reference, and reporting it as
             // OBJECT keeps later boxing decisions honest.
@@ -741,10 +884,11 @@ public final class Compiler {
                     "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
             return Operators.Rep.OBJECT;
         }
-        // Any operator that reaches the helper returns an object, whatever its static kind was.
+        // Any operator that reaches the helper returns an object, whatever its static kind was —
+        // except `contains`, whose helper returns a boolean.
         boolean helperResult = switch (operator) {
-            case "-", "*", "/", "%" -> !(left.isNumber() && right.isNumber());
-            case "+", "contains" -> true;
+            case "-", "*" -> !(left.isNumber() && right.isNumber());
+            case "+", "/", "%" -> true;
             default -> false;
         };
         if (helperResult) {
@@ -862,20 +1006,19 @@ public final class Compiler {
         double delta = operator.endsWith("++") ? 1.0 : -1.0;
         Target target = asTarget(unary.operand(), unary.pos());
 
-        // Read, keep the old value when needed, then apply and write back the new value.
-        int previous = -1;
+        // Read the value, then arrange the stack so the write consumes the new value
+        // while the wanted one (old for postfix, new for prefix) stays on top.
         Operators.Rep current = readValue(state, target);
         Operators.convert(state.code, current, Operators.Rep.NUMBER);
         if (postfix) {
-            previous = state.scratchDouble();
-            state.code.storeDouble(previous);
+            state.code.dup2();
         }
         state.code.dconst(delta);
         state.code.dadd();
-        writeNumber(state, target);
-        if (postfix) {
-            state.code.loadDouble(previous);
+        if (!postfix) {
+            state.code.dup2();
         }
+        writeNumber(state, target);
         return Operators.Rep.NUMBER;
     }
 
@@ -920,10 +1063,17 @@ public final class Compiler {
         for (int index = 0; index < arguments.size(); index++) {
             Operators.Rep wanted = Operators.repOf(spec.parameterTypes()[index]);
             Operators.Rep actual = emitExpression(state, arguments.get(index));
+            if (wanted.isObject()) {
+                // Reference parameters take anything: box primitives in place, keep
+                // references as-is. Converting to Object is a no-op by design, so it
+                // must not be used here — a primitive would survive to the call.
+                Operators.boxToObject(state.code, actual);
+                continue;
+            }
             if (actual.jvmType().equals(wanted.jvmType())) {
                 continue;
             }
-            if (wanted.isObject() || actual.isObject() || isLooselyCompatible(actual, wanted)) {
+            if (actual.isObject() || isLooselyCompatible(actual, wanted)) {
                 Operators.convert(state.code, actual, wanted);
                 continue;
             }
@@ -1064,7 +1214,20 @@ public final class Compiler {
             case GlobalTarget global -> readGlobal(state, global.name());
             case PlayerTarget player -> readPlayerVariable(state, player.name());
             case IndexTarget index -> pushLikeGet(state, index.receiver(), index.key());
+            case PropertyTarget property -> pushProperty(state, property);
         };
+    }
+
+    /**
+     * Reads a property directly through {@code PlayerAccess.get}, without the
+     * index-dispatch protocol: no context is needed, only the receiver value.
+     */
+    private Operators.Rep pushProperty(MethodState state, PropertyTarget target) {
+        pushReference(state, target.receiver());
+        state.code.aconst(target.name());
+        state.code.invokeStatic(PLAYER_ACCESS_OWNER, "get",
+                "(" + OBJECT_DESC + "Ljava/lang/String;)" + OBJECT_DESC);
+        return Operators.Rep.OBJECT;
     }
 
     /** Stores the value currently on the stack, which is consumed. */
@@ -1089,7 +1252,11 @@ public final class Compiler {
                 if (storage == null) {
                     storage = state.declareLocal(local.name(), Ast.Type.ANY);
                 }
-                storage.refine(observed);
+                if (state.conditionalDepth > 0) {
+                    storage.pinDynamic();
+                } else {
+                    storage.refine(observed);
+                }
                 storeStorage(state, storage, value);
             }
             case GlobalTarget global -> {
@@ -1131,6 +1298,14 @@ public final class Compiler {
                 state.code.invokeStatic(Builtins.FUNCTIONS_OWNER, "dispatch", Builtins.DISPATCH_DESCRIPTOR);
                 state.code.pop();
             }
+            case PropertyTarget property -> {
+                int scratch = stash(state, value);
+                pushReference(state, property.receiver());
+                state.code.aconst(property.name());
+                state.code.loadRef(scratch);
+                state.code.invokeStatic(PLAYER_ACCESS_OWNER, "set",
+                        "(" + OBJECT_DESC + "Ljava/lang/String;" + OBJECT_DESC + ")V");
+            }
         }
     }
 
@@ -1154,6 +1329,9 @@ public final class Compiler {
         }
         if (expression instanceof Index index) {
             return new IndexTarget(index.receiver(), index.key(), index.pos());
+        }
+        if (expression instanceof Property property) {
+            return new PropertyTarget(property.receiver(), property.name(), property.pos());
         }
         throw error(pos, "expected an assignable target");
     }
@@ -1192,6 +1370,14 @@ public final class Compiler {
 
         /** Narrows the known kind; a conflict degrades to {@code ANY}. */
         void refine(Ast.Type observed);
+
+        /**
+         * Marks the variable dynamic without trusting the stored value. Used for
+         * stores inside conditional bodies, which may never run: narrowing there
+         * would specialize later code for a value that never arrives.
+         */
+        default void pinDynamic() {
+        }
 
         final class JvmLocal implements Storage {
 
@@ -1245,6 +1431,14 @@ public final class Compiler {
                     return;
                 }
                 kind = mergeKinds(kind, observed);
+            }
+
+            @Override
+            public void pinDynamic() {
+                if (fixedKind == null) {
+                    kind = Ast.Type.ANY;
+                    kindKnown = true;
+                }
             }
 
             @Override
@@ -1389,7 +1583,6 @@ public final class Compiler {
         private final Deque<LoopLabels> loops = new ArrayDeque<>();
         private int nextLocal;
         private int scratch = -1;
-        private int scratchDouble = -1;
         private Ast.Type returnType = Ast.Type.VOID;
         /**
          * True inside trigger and command handlers, whose first slots hold the argument
@@ -1398,6 +1591,12 @@ public final class Compiler {
          * calls) is rejected with a readable error instead of corrupt bytecode.
          */
         private boolean hasContext;
+        /**
+         * Nesting level inside conditional bodies ({@code if} branches, loops).
+         * Stores here may never execute (or repeat with new values), so they must
+         * not narrow an inferred local kind — only degrade it to dynamic.
+         */
+        private int conditionalDepth;
 
         MethodState(Code code, int baseLocals) {
             this.code = code;
@@ -1427,15 +1626,6 @@ public final class Compiler {
                 scratch = nextLocal++;
             }
             return scratch;
-        }
-
-        /** Second scratch slot, used by postfix increment to keep the previous value. */
-        int scratchDouble() {
-            if (scratchDouble < 0) {
-                scratchDouble = nextLocal;
-                nextLocal += 2;
-            }
-            return scratchDouble;
         }
 
         /** Declares a script-visible local backed by a JVM slot; its kind is inferred later. */
@@ -1478,10 +1668,18 @@ public final class Compiler {
     // ------------------------------------------------------------------ helpers
 
     private static String sanitize(String name) {
+        // Reversible: '_' doubles, anything else exotic becomes '$' + hex, so `a-b`
+        // and `a_b` (or two files with such ids) can never collide after mapping.
         StringBuilder builder = new StringBuilder(name.length());
         for (int i = 0; i < name.length(); i++) {
             char character = name.charAt(i);
-            builder.append(Character.isLetterOrDigit(character) ? character : '_');
+            if (Character.isLetterOrDigit(character)) {
+                builder.append(character);
+            } else if (character == '_') {
+                builder.append("__");
+            } else {
+                builder.append('$').append(Integer.toHexString(character));
+            }
         }
         return builder.toString();
     }

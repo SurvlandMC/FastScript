@@ -176,6 +176,8 @@ final class Interpreter {
             case Ast.PlayerTarget player -> host.variables().getPlayer(context.exec.playerId(), player.name());
             case Ast.IndexTarget index -> Values.index(eval(index.receiver(), context),
                     eval(index.key(), context));
+            case Ast.PropertyTarget property -> PlayerAccess.get(eval(property.receiver(), context),
+                    property.name());
         };
     }
 
@@ -191,6 +193,8 @@ final class Interpreter {
                 Object[] args = {"assignIndex", receiver, key, value};
                 Functions.dispatch(context.exec, args);
             }
+            case Ast.PropertyTarget property -> PlayerAccess.set(eval(property.receiver(), context),
+                    property.name(), value);
         }
     }
 
@@ -267,6 +271,8 @@ final class Interpreter {
             case Ast.Global global -> new Ast.GlobalTarget(global.name(), global.pos());
             case Ast.PlayerVar player -> new Ast.PlayerTarget(player.name(), player.pos());
             case Ast.Index index -> new Ast.IndexTarget(index.receiver(), index.key(), index.pos());
+            case Ast.Property property ->
+                    new Ast.PropertyTarget(property.receiver(), property.name(), property.pos());
             default -> throw new EvalException("expected an assignable target");
         };
     }

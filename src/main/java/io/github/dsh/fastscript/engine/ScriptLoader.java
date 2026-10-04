@@ -25,9 +25,10 @@ import java.util.Map;
  * resolve every handler to a {@link MethodHandle}. Resolution happens once at load time, so
  * event dispatch costs no reflective lookup and no boxing of the handler arguments.</p>
  *
- * <p>Compilation is split into phases across all sources. All classes are generated first,
- * which makes the inter-script function table available to every compilation, and only then
- * are the classes defined — that removes any dependency on file ordering.</p>
+ * <p>Compilation is split into phases across all sources. All classes are generated
+ * one script at a time; every script keeps its own function table, so a function
+ * is visible only inside the file that declares it. Sharing across files is done
+ * through events, commands and global variables.</p>
  */
 public final class ScriptLoader {
 
@@ -179,10 +180,18 @@ public final class ScriptLoader {
     }
 
     private static String sanitize(String value) {
+        // Same reversible scheme as the compiler: '_' doubles, exotic characters
+        // become '$' + hex, so ids like `a-b` and `a_b` define distinct classes.
         StringBuilder builder = new StringBuilder(value.length());
         for (int i = 0; i < value.length(); i++) {
             char character = value.charAt(i);
-            builder.append(Character.isLetterOrDigit(character) ? character : '_');
+            if (Character.isLetterOrDigit(character)) {
+                builder.append(character);
+            } else if (character == '_') {
+                builder.append("__");
+            } else {
+                builder.append('$').append(Integer.toHexString(character));
+            }
         }
         if (builder.isEmpty() || Character.isDigit(builder.charAt(0))) {
             builder.insert(0, 'S');

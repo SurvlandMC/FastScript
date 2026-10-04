@@ -108,11 +108,6 @@ public final class BenchRunner {
         }
 
         @Override
-        public void cancelEvent() {
-            logs.add("cancelled");
-        }
-
-        @Override
         public VariableStore variables() {
             return store;
         }

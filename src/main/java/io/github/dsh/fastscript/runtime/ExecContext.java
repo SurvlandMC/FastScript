@@ -96,7 +96,6 @@ public final class ExecContext {
 
     public void cancel() {
         this.cancelled = true;
-        host.cancelEvent();
     }
 
     /** DSL name for {@link #cancel()} (kebab-case {@code cancel-event} maps here). */

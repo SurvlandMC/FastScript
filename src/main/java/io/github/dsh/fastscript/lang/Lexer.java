@@ -20,7 +20,7 @@ public final class Lexer {
     private static final Set<String> KEYWORDS = Set.of(
             "on", "if", "else", "while", "loop", "times", "for", "in", "break", "continue",
             "stop", "return", "function", "command", "true", "false", "null", "and", "or", "not",
-            "contains", "is", "as", "let");
+            "contains", "is", "as", "let", "where");
 
     private static final Map<String, Integer> OPERATOR_LENGTHS = Map.ofEntries(
             Map.entry(">>>", 3),
@@ -33,7 +33,7 @@ public final class Lexer {
             Map.entry("%", 1), Map.entry(">", 1), Map.entry("<", 1), Map.entry("=", 1),
             Map.entry("!", 1), Map.entry(".", 1));
 
-    private static final String PUNCTUATION = "(){},:[]";
+    private static final String PUNCTUATION = "(){},:[]?";
 
     private final String source;
     private final String fileName;

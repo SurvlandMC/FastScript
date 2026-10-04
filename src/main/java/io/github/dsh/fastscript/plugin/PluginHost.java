@@ -18,17 +18,9 @@ public final class PluginHost implements Host {
 
     private final JavaPlugin plugin;
     private final VariableStore store = new VariableStore();
-    private volatile boolean eventCancelled;
 
     public PluginHost(JavaPlugin plugin) {
         this.plugin = plugin;
-    }
-
-    /** Consumes the cancellation flag set by {@code cancel-event} during the last dispatch. */
-    public boolean consumeCancelled() {
-        boolean value = eventCancelled;
-        eventCancelled = false;
-        return value;
     }
 
     @Override
@@ -147,18 +139,22 @@ public final class PluginHost implements Host {
     }
 
     @Override
-    public void cancelEvent() {
-        eventCancelled = true;
-    }
-
-    @Override
     public VariableStore variables() {
         return store;
     }
 
     @Override
     public Map<String, Object> scriptInfo() {
-        return Map.of("plugin", plugin.getName());
+        Map<String, Object> info = new java.util.LinkedHashMap<>();
+        info.put("plugin", plugin.getName());
+        for (World world : Bukkit.getWorlds()) {
+            java.util.List<String> names = new java.util.ArrayList<>();
+            for (Player player : world.getPlayers()) {
+                names.add(player.getName());
+            }
+            info.put("world-players-" + world.getName(), names);
+        }
+        return info;
     }
 
 }

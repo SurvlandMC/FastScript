@@ -23,6 +23,7 @@ import io.github.dsh.fastscript.ast.Ast.PlayerTarget;
 import io.github.dsh.fastscript.ast.Ast.PlayerVar;
 import io.github.dsh.fastscript.ast.Ast.Pos;
 import io.github.dsh.fastscript.ast.Ast.Property;
+import io.github.dsh.fastscript.ast.Ast.PropertyTarget;
 import io.github.dsh.fastscript.ast.Ast.Script;
 import io.github.dsh.fastscript.ast.Ast.Stop;
 import io.github.dsh.fastscript.ast.Ast.Stmt;
@@ -95,6 +96,10 @@ public final class Parser {
     public static Ast.Expr parseExpressionOnly(String expression, String fileName) {
         Parser parser = new Parser(new Lexer(expression, fileName).tokenize(), fileName);
         Ast.Expr parsed = parser.parseExpression();
+        // A standalone snippet lexes with a trailing NEWLINE; it is not content.
+        while (parser.check(TokenType.NEWLINE)) {
+            parser.advance();
+        }
         if (!parser.check(TokenType.EOF)) {
             throw parser.error(parser.peek(),
                     "unexpected " + parser.peek().describe() + " after the filter expression");
@@ -225,8 +230,13 @@ public final class Parser {
         }
         Ast.Type returnType = Ast.Type.VOID;
         if (checkPunct(":")) {
-            advance();
-            returnType = parseTypeName();
+            // A colon at the end of the line is the block colon: a void function.
+            // Otherwise it introduces the return type annotation.
+            Token after = peekNext();
+            if (after.type() != TokenType.NEWLINE && after.type() != TokenType.EOF) {
+                advance();
+                returnType = parseTypeName();
+            }
         }
         expectPunct(":");
         return new FunctionDecl(name.text(), List.copyOf(parameters), returnType, parseBlock(), pos(start));
@@ -439,6 +449,9 @@ public final class Parser {
         if (current instanceof Index index) {
             return new IndexTarget(index.receiver(), index.key(), pos(start));
         }
+        if (current instanceof Property property) {
+            return new PropertyTarget(property.receiver(), property.name(), pos(start));
+        }
         if (current == receiver) {
             return new LocalTarget(((Local) receiver).name(), pos(start));
         }
@@ -472,8 +485,7 @@ public final class Parser {
                 continue;
             }
             if (depth == 0 && token.type() == TokenType.OPERATOR
-                    && (ASSIGN_OPERATORS.contains(token.text())
-                            || token.text().equals("++") || token.text().equals("--"))) {
+                    && ASSIGN_OPERATORS.contains(token.text())) {
                 return true;
             }
         }
@@ -724,7 +736,18 @@ public final class Parser {
             if (builder.length() > 0 && !glue) {
                 builder.append(' ');
             }
-            builder.append(token.type() == TokenType.TEXT ? "\"" + token.text() + "\"" : token.text());
+            // Re-emit source spelling: variable sigils and text quotes are not part of
+            // the token text, but the filter is re-parsed, so they must be restored.
+            if (token.type() == TokenType.GLOBAL_VAR) {
+                builder.append('$');
+            } else if (token.type() == TokenType.PLAYER_VAR) {
+                builder.append('#');
+            }
+            if (token.type() == TokenType.TEXT) {
+                builder.append('"').append(token.text().replace("\"", "\\\"")).append('"');
+            } else {
+                builder.append(token.text());
+            }
         }
         return builder.toString();
     }

@@ -10,12 +10,12 @@ $javac = Join-Path $jdk 'bin\javac.exe'
 $sourceRoot = Join-Path $Root 'src\main\java'
 $outDir = Join-Path $Root 'build\classes'
 $libsDir = Join-Path $Root 'libs'
-$asmDir = Join-Path $Root 'build\asm-relocated'
 
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
-$classpath = @(Get-ChildItem $libsDir -Filter *.jar | Where-Object { $_.Name -notmatch 'asm' } | ForEach-Object { $_.FullName })
-if (Test-Path $asmDir) { $classpath += $asmDir }
+# Same classpath convention as build.ps1: everything from libs\, ASM included
+# (it is relocated only at packaging time, not at compile time).
+$classpath = @(Get-ChildItem $libsDir -Filter *.jar | ForEach-Object { $_.FullName })
 $classpath += $outDir
 
 $sources = Get-ChildItem (Join-Path $sourceRoot '*.java') -Recurse | ForEach-Object { $_.FullName }

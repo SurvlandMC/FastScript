@@ -118,7 +118,8 @@ public final class Ast {
 
     // ------------------------------------------------------------------ assignment targets
 
-    public sealed interface Target permits LocalTarget, GlobalTarget, PlayerTarget, IndexTarget {
+    public sealed interface Target permits LocalTarget, GlobalTarget, PlayerTarget, IndexTarget,
+            PropertyTarget {
         Pos pos();
     }
 
@@ -132,6 +133,10 @@ public final class Ast {
     }
 
     public record IndexTarget(Expr receiver, Expr key, Pos pos) implements Target {
+    }
+
+    /** Assignable player (or list-size) property, for example {@code victim.health}. */
+    public record PropertyTarget(Expr receiver, String name, Pos pos) implements Target {
     }
 
     // ------------------------------------------------------------------ expressions

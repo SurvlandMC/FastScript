@@ -11,6 +11,8 @@ command heal(target : text) permission fastscript.heal:
 
 # Welcome message with a per-player visit counter.
 on player join:
+    if #visits is null:
+        #visits = 0
     #visits = #visits + 1
     message "Welcome! This is visit number " + #visits
 

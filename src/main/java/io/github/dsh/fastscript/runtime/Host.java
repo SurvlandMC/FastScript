@@ -36,8 +36,6 @@ public interface Host {
 
     void runLater(Runnable task, long delayTicks);
 
-    void cancelEvent();
-
     /** Persisted variables the host owns; the plugin implementation exposes them in-game. */
     VariableStore variables();
 
