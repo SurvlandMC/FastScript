@@ -1,0 +1,102 @@
+site_name: FastScript Wiki
+site_description: Full documentation for the FastScript language — a JIT-compiled Skript alternative for Paper/Leaf.
+site_author: FastScript
+site_url: http://localhost:8000/
+
+theme:
+  name: material
+  language: en
+  logo: assets/logo.svg
+  favicon: assets/logo.svg
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.tabs.link
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Dark theme
+    - scheme: slate
+      primary: indigo
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Light theme
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+
+plugins:
+  - search
+  - i18n:
+      default_language: en
+      languages:
+        en: English
+        ru: Русский
+      nav_translations:
+        ru:
+          Home: Главная
+          Quick start: Быстрый старт
+          Tutorial: Учебник
+          First script: Первый скрипт
+          Economy and shop: Экономика и магазин
+          Warps: Варпы
+          Anti-spam: Анти-спам
+          Cookbook: Кулинарная книга
+          Reference: Справочник
+          Syntax and lexing: Синтаксис и лексика
+          Triggers, commands, functions: Триггеры, команды, функции
+          Statements: Операторы
+          Expressions and types: Выражения и типы
+          Operator table: Таблица операторов
+          Events: События
+          Functions: Функции
+          Value types: Типы значений
+          Players and variables: Игроки и переменные
+          Script examples: Примеры скриптов
+          Skript migration: Миграция со Skript
+          Error catalog: Каталог ошибок
+          Compiler internals: Внутренности компилятора
+          Operations and benchmarks: Эксплуатация и бенчмарки
+
+nav:
+  - Home: index.md
+  - Quick start: quickstart.md
+  - Tutorial:
+    - First script: tutorial-first-plugin.md
+    - Economy and shop: tutorial-economy.md
+    - Warps: tutorial-warps.md
+    - Anti-spam: tutorial-automod.md
+  - Cookbook: cookbook.md
+  - Reference:
+    - Syntax and lexing: syntax.md
+    - Triggers, commands, functions: declarations.md
+    - Statements: statements.md
+    - Expressions and types: expressions.md
+    - Operator table: reference-operators.md
+    - Events: reference-events.md
+    - Functions: reference-functions.md
+    - Value types: values.md
+    - Players and variables: players.md
+  - Script examples: examples.md
+  - Skript migration: skript-migration.md
+  - Error catalog: errors.md
+  - Compiler internals: internals.md
+  - Operations and benchmarks: ops.md

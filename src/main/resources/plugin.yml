@@ -1,0 +1,27 @@
+name: FastScript
+version: 1.0.0
+main: io.github.dsh.fastscript.plugin.FastScriptPlugin
+api-version: '1.21'
+author: FastScript
+description: Compiled scripting engine - scripts are JIT-compiled to JVM bytecode.
+folia-supported: false
+
+commands:
+  fastscript:
+    description: FastScript administration
+    usage: /fastscript <reload|scripts|variables|bench>
+    aliases: [fs]
+    permission: fastscript.admin
+  # Script commands must be declared here to be visible to Bukkit.
+  # Add one entry per `command` block in your scripts, for example:
+  heal:
+    description: Declared by a script
+    usage: /heal <player>
+  kit:
+    description: Declared by a script
+    usage: /kit
+
+permissions:
+  fastscript.admin:
+    description: Access to FastScript administration commands
+    default: op

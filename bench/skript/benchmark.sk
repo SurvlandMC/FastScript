@@ -1,0 +1,50 @@
+# Skript benchmark equivalent of bench/scripts/Arithmetic.fs.
+# Same algorithms (iterative fib, loop sum, countdown concatenation).
+# Usage: /sk reload benchmark, then /bench-sk 20000
+# Repeat 5 times after 2-3 warmup runs, take the median.
+# Skript version differences (function syntax, `loop N times`) are the main
+# portability risk; adjust to your Skript version, keep the algorithms identical.
+
+function fib(n: number) :: number:
+    if {_n} < 2:
+        return {_n}
+    set {_a} to 0
+    set {_b} to 1
+    set {_i} to 2
+    while {_i} <= {_n}:
+        set {_next} to {_a} + {_b}
+        set {_a} to {_b}
+        set {_b} to {_next}
+        add 1 to {_i}
+    return {_b}
+
+function sumRange(limit: number) :: number:
+    set {_total} to 0
+    loop {_limit} times:
+        add loop-number - 1 to {_total}
+    return {_total}
+
+function countdown(from: number) :: text:
+    set {_result} to ""
+    set {_i} to {_from}
+    while {_i} > 0:
+        set {_result} to "%{_result}%%{_i}%,"
+        remove 1 from {_i}
+    return {_result}
+
+command /bench-sk <integer>:
+    trigger:
+        set {_iters} to arg 1
+        # Warmup so both engines are compared hot.
+        loop 500 times:
+            fib(20) is set to {_w}
+        set {_start} to now
+        loop {_iters} times:
+            fib(20) is set to {_w}
+        set {_fibMs} to difference between {_start} and now in milliseconds
+        broadcast "skript fib(20) x%{_iters}%: %{_fibMs}% ms"
+        set {_start2} to now
+        loop 200 times:
+            sumRange(1000) is set to {_w2}
+        set {_sumMs} to difference between {_start2} and now in milliseconds
+        broadcast "skript sum-range(1000) x200: %{_sumMs}% ms"

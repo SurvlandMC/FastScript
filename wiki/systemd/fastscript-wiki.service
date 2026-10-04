@@ -1,0 +1,16 @@
+# systemd unit for FastScript Wiki (installed by install.sh).
+# Serves the MkDocs site on localhost; nginx proxies to it.
+[Unit]
+Description=FastScript Wiki (MkDocs)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=__INSTALL_DIR__
+ExecStart=__INSTALL_DIR__/.venv/bin/mkdocs serve -a 127.0.0.1:__PORT__ -f __INSTALL_DIR__/mkdocs.yml
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

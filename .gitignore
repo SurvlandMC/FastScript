@@ -1,0 +1,24 @@
+# Build outputs
+build/
+tools/out/
+*.class
+
+# Resolved third-party jars (fetch via tools/Fetch.java, see build.ps1)
+libs/
+
+# Packaged deliverables (regenerate: build.ps1 / Compress-Archive)
+*.jar
+*.zip
+
+# Python / MkDocs
+.venv/
+site/
+__pycache__/
+
+# Editors / OS
+.vscode/
+.idea/
+*.swp
+*~
+Thumbs.db
+Desktop.ini
