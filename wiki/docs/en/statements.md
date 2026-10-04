@@ -11,9 +11,8 @@ list[0] = "first"
 
 - `let name = <expression>` — explicit local declaration (`=` required).
 - Plain and compound assignment: `= += -= *= /= %=`.
-- Targets: local, `$global`, `#player` variable, `list[i]` / `map[key]`.
-  Assigning through a dot (`victim.health = ...`) is **not** supported
-  by the parser — for health use `set-health(victim, 20)`.
+- Targets: local, `$global`, `#player` variable, `list[i]` / `map[key]`,
+  and player properties (`victim.health = 20` writes through `PlayerAccess.set`).
 - Postfix increment: `i++`, `i--` (plus prefix `++x`, `--x`).
 
 ## Branching

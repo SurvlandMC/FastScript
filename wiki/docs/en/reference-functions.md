@@ -48,7 +48,7 @@ stop                       # [D]irect, exit the handler
 ```fs
 let me = sender()               # [D]irect, the sender object (event player in triggers)
 message sender-name()           # [D]irect, their name as text
-message arg(1)                  # [D]irect, the 1st command argument as text
+message arg(2)                  # [D]irect, the 1st command argument as text (args[0] is the sender, args[1] the event)
 for p in online-players():      # [D]irect, list of online player objects
     message name(p)             # [D]ispatch name/1, nickname of the object
 ```

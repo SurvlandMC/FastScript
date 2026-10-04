@@ -99,7 +99,7 @@ message size(words)      # 3 (размер списка)
 ## Регистр и чистка ввода
 
 ```fs
-let nick = trim(arg(1))
+let nick = trim(arg(2))
 if lower(nick) == "admin":
     message "Nice try."
 ```

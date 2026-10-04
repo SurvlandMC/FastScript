@@ -98,7 +98,7 @@ message size(words)      # 3 (list size)
 ## Case and input cleanup
 
 ```fs
-let nick = trim(arg(1))
+let nick = trim(arg(2))
 if lower(nick) == "admin":
     message "Nice try."
 ```

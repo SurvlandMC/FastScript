@@ -3,8 +3,9 @@
 ## The load pipeline
 
 `ScriptLoader.load`: parse every source → generate every class
-(the function table is available to each compilation — file order doesn't
-matter) → `defineClass` in a child `ScriptClassLoader` (keyed by **binary
+(one function table per script: a function is visible only inside the file
+that declares it — sharing across files goes through events, commands
+and globals) → `defineClass` in a child `ScriptClassLoader` (keyed by **binary
 name**, not id) → resolve `MethodHandle`s: triggers/commands as
 `void(Object[], ExecContext)`, functions via
 `MethodType.fromMethodDescriptorString`. One failing script produces

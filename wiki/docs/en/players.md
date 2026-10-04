@@ -24,16 +24,16 @@ message victim.name + " has " + victim.health + " hp"
 `is-op`, `is-flying`, `is-sneaking`, `is-sprinting`, `is-online`,
 `ping`, `ip`.
 
-Properties are **read-only**: assigning through a dot
-(`victim.health = 20`) is rejected by the parser with
-`cannot assign to this expression`. To change health there are
-dedicated tools:
+Properties read through the dot, and the writable ones also assign:
+`health`, `food`, `level`, `exp`, `display-name`, `flying`, `sneaking`,
+`sprinting` (written straight through `PlayerAccess.set`):
 
 ```fs
-set-health(victim, 20)   # health of a specific player
-heal 5                   # heal the event player by 5
+victim.health = 20
+victim.food = 20
 ```
 
+Writing anything else throws `EvalException: player property '...' is read-only`.
 An unknown property is `EvalException: unknown player property '...'`.
 
 ## Variables: `$`, `#`, persistence
@@ -57,8 +57,10 @@ on player join:
 
 Rules:
 
-- Globals are saved to `plugins/FastScript/variables.yml`
-  **when the plugin is disabled**, not on every change.
+- Globals and per-player variables are saved to `plugins/FastScript/variables.yml`
+  (players under `__players__` by UUID) **when the plugin is disabled**,
+  not on every change. `$name = <literal>` at the top level also seeds
+  missing values on load — saved values always win.
 - Writing `#var` with no player in context is an error
   (`no player in context for a player-scoped variable`); reading is `null`.
 - `null + 1` arithmetic: `Values.toNumber(null)` throws —

@@ -23,15 +23,16 @@ message victim.name + " has " + victim.health + " hp"
 `is-op`, `is-flying`, `is-sneaking`, `is-sprinting`, `is-online`,
 `ping`, `ip`.
 
-Свойства — **только для чтения**: присваивание в точку (`victim.health = 20`)
-парсер отвергает ошибкой `cannot assign to this expression`. Для смены
-здоровья есть отдельные средства:
+Свойства читаются через точку, а записываемые — ещё и пишутся:
+`health`, `food`, `level`, `exp`, `display-name`, `flying`, `sneaking`,
+`sprinting` (запись идёт напрямую через `PlayerAccess.set`):
 
 ```fs
-set-health(victim, 20)   # здоровье конкретного игрока
-heal 5                   # полечить игрока события на 5
+victim.health = 20
+victim.food = 20
 ```
 
+Запись всего остального — `EvalException: player property '...' is read-only`.
 Неизвестное свойство — `EvalException: unknown player property '...'`.
 
 ## Переменные: `$`, `#`, персистентность
@@ -55,8 +56,10 @@ on player join:
 
 Правила:
 
-- Глобалы сохраняются в `plugins/FastScript/variables.yml`
-  **при выключении плагина**, а не на каждое изменение.
+- Глобалы и per-player переменные сохраняются в `plugins/FastScript/variables.yml`
+  (игроки — под `__players__` по UUID) **при выключении плагина**,
+  а не на каждое изменение. `$name = <литерал>` на верхнем уровне также
+  инициализирует отсутствующие значения при загрузке — сохранённые всегда побеждают.
 - Запись `#var` без игрока в контексте — ошибка
   (`no player in context for a player-scoped variable`); чтение — `null`.
 - Арифметика `null + 1`: `Values.toNumber(null)` бросит исключение —

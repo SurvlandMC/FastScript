@@ -33,7 +33,9 @@ of compiled bytecode against a tree-walking interpreter of the same AST
 (`bench/Interpreter`): one script (`bench/scripts/Arithmetic.fs`: `fib`,
 `sum-range`, `countdown`, `echo-number`, `sum-count`), identical inputs,
 warmup before measuring. Rule of thumb: fib ~4x, sum-range ~12–20x
-(drifts between machines — by design).
+(drifts between machines — by design). Honest scope: single process,
+basic warmup, no JMH harness or confidence intervals — it shows the
+approach pays off on the chosen operations, not a whole-server speedup.
 
 Comparing against Skript is done on your own server following
 `bench/skript/README-skript.md` (with `benchmark.sk` and `benchmark.fs`):
@@ -52,8 +54,10 @@ same algorithm on both sides, warmup, 5 runs, median.
 
 ## Known limitations
 
-- Globals (`$name`) are saved to `variables.yml` when the plugin is
-  disabled, not on every change.
+- Globals and per-player variables (`$name`, `#name`) are saved to
+  `variables.yml` (players under `__players__`) when the plugin is
+  disabled, not on every change. A failed `/fastscript reload` keeps
+  the previous working set instead of wiping it.
 - The scheduler (`Host.runLater`) exists in the runtime but is not exposed
   in the DSL.
 - The `where` filter (`on damage where ...`) parses as a plain expression.

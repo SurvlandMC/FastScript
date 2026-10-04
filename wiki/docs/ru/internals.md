@@ -3,10 +3,12 @@
 ## Конвейер загрузки
 
 `ScriptLoader.load`: парсинг всех исходников → генерация всех классов
-(таблица функций доступна каждой компиляции — порядок файлов не важен) →
-`defineClass` в дочернем `ScriptClassLoader` (ключ — **бинарное имя**, не id) →
-резолв `MethodHandle`: триггеры/команды типом `void(Object[], ExecContext)`,
-функции — `MethodType.fromMethodDescriptorString`. Ошибка любого скрипта —
+(таблица функций — одна на скрипт: функция видна только внутри файла,
+где объявлена, — общее между файлами идёт через события, команды
+и глобалы) → `defineClass` в дочернем `ScriptClassLoader` (ключ —
+**бинарное имя**, не id) → резолв `MethodHandle`: триггеры/команды типом
+`void(Object[], ExecContext)`, функции —
+`MethodType.fromMethodDescriptorString`. Ошибка любого скрипта —
 `LoadException` со всеми причинами сразу.
 
 `FASTSCRIPT_DUMP_DIR=path` — сложить сгенерированные `.class` на диск

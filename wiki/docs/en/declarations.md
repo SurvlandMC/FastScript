@@ -57,9 +57,12 @@ command heal(target : text) permission fastscript.heal:
 - Arguments are positional text values. The last one annotated `: text`
   is greedy — it captures the rest of the line.
 - `permission fastscript.heal` — the required permission (dotted nodes work:
-  the parser joins `fastscript` `.` `heal`).
-- Inside the handler `args[0]` is the sender; read arguments with `arg(1)`,
-  the sender with `sender()` / `sender-name()`.
+  the parser joins `fastscript` `.` `heal`). It is enforced twice: Bukkit hides
+  the command via `plugin.yml`, and the plugin re-checks at execution, so one
+  open declaration among several scripts is enough to allow it.
+- Inside the handler `args[0]` is the sender (`sender()`), `args[1]` is the event
+  (empty in commands); positional command arguments start at `arg(2)`:
+  `arg(2)` is the first parameter, `arg(3)` the second.
 - **Duplicate every command in `plugin.yml`**, otherwise Bukkit won't bind it
   (the log will say `is not declared in plugin.yml`).
 
@@ -94,3 +97,5 @@ on server start:
 
 `$name = <expression>` at the top level declares a variable with an initial
 value (the value is optional). It is shared by every script in the directory.
+Literal initializers (`$balance = 100`) seed missing values on load — saved
+values always win; anything fancier belongs inside a handler.

@@ -14,7 +14,7 @@ Format: `file:line:column: message`. Each one below with cause and fix.
 | `unexpected end of line in an expression` | Truncated expression (dangling `+`, unclosed `(`) |
 | `unterminated text literal` | Missing closing `"` |
 | `expected a variable name after '$'` | `$` + space/end → `$name` must be joined |
-| `cannot assign to this expression` | Not a target on the left (`a.b = ...` — properties are read-only) |
+| `cannot assign to this expression` | Not a target on the left (index chains and properties are assignable; anything else is not) |
 | `unknown type '...'` | In a function/argument annotation — only `number text string boolean bool list map player` |
 | `unknown command attribute '...'` | After the command name — only `permission`/`description` |
 | `expected 'in' after the loop variable` | `for x in ...:` — `in` is missing |

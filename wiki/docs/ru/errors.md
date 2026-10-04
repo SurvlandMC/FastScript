@@ -14,7 +14,7 @@
 | `unexpected end of line in an expression` | Выражение оборвано (висячий `+`, незакрытая `(`) |
 | `unterminated text literal` | Нет закрывающей `"` |
 | `expected a variable name after '$'` | `$` + пробел/конец → `$name` слитно |
-| `cannot assign to this expression` | Слева не цель (`a.b = ...` — свойства только читаются) |
+| `cannot assign to this expression` | Слева не цель (цепочки индексов и свойства присваиваемы; остальное — нет) |
 | `unknown type '...'` | В аннотации функции/аргумента — только `number text string boolean bool list map player` |
 | `unknown command attribute '...'` | После имени команды — только `permission`/`description` |
 | `expected 'in' after the loop variable` | `for x in ...:` — пропущен `in` |
