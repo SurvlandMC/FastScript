@@ -60,8 +60,12 @@ plugins:
       docs_structure: folder
       default_language: en
       languages:
-        en: English
-        ru: Русский
+        - locale: en
+          name: English
+          build: true
+        - locale: ru
+          name: Русский
+          build: true
       nav_translations:
         ru:
           Home: Главная
