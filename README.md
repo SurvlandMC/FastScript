@@ -69,6 +69,8 @@ commands:
 
 ## Docs
 
+Live docs: **https://wikifs.mc.dc.kg** (English + Russian).
+
 Full language reference, tutorials and cookbook live in the wiki:
 [`wiki/`](wiki/) — build it with MkDocs Material or deploy in minutes
 with [`wiki/install.sh`](wiki/install.sh) ([deploy guide](wiki/DEPLOY.md),
@@ -80,3 +82,7 @@ nginx + systemd, no Docker). The wiki comes in English and Russian.
 of the same AST (`bench/scripts/Arithmetic.fs`): typically ~4x on `fib`,
 ~12–20x on loops. To compare against Skript on your own server, follow
 `bench/skript/README-skript.md` (equivalent `benchmark.sk` included).
+
+## License
+
+Apache-2.0 — see [LICENSE](LICENSE).

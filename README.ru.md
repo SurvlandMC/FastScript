@@ -69,9 +69,11 @@ commands:
 
 ## Документация
 
+Живая документация: **https://wikifs.mc.dc.kg** (русский + английский).
+
 Полный справочник языка, учебники и рецепты — в вики:
 [`wiki/`](wiki/) — собирается MkDocs Material, деплой за минуты через
-[`wiki/install.sh`](wiki/install.sh) ([гайд](wiki/DEPLOY.md),
+[`wiki/install.sh`](wiki/install.sh) ([гайд](wiki/DEPLOY.ru.md),
 nginx + systemd, без Docker). Вики на русском и английском.
 
 ## Бенчмарки
@@ -81,3 +83,7 @@ nginx + systemd, без Docker). Вики на русском и английс�
 на `fib`, ~12–20x на циклах. Сравнение со Skript на своём сервере —
 по процедуре `bench/skript/README-skript.md` (эквивалент `benchmark.sk`
 в комплекте).
+
+## Лицензия
+
+Apache-2.0 — см. [LICENSE](LICENSE).
