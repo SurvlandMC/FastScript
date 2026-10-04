@@ -1,5 +1,7 @@
 # FastScript — scripts that compile
 
+[Читать по-русски](/ru/){ .md-button }
+
 FastScript is an optimized Skript alternative for **Paper 1.21.8+**
 and **Leaf** servers. Scripts are written in a small Skript-like DSL and
 **JIT-compiled to JVM bytecode** (via ASM) on load — one Java class per script.

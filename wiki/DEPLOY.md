@@ -47,7 +47,13 @@ Compress-Archive -Path wiki -DestinationPath fastscript-wiki.zip -Force
 # on the server:
 cd /tmp && unzip -o fastscript-wiki.zip -d fastscript-wiki-src
 sudo cp -r fastscript-wiki-src/wiki/docs/* /opt/fastscript-wiki/docs/
+sudo cp fastscript-wiki-src/wiki/mkdocs.yml /opt/fastscript-wiki/mkdocs.yml
+# in case the venv predates the bilingual plugin:
+sudo /opt/fastscript-wiki/.venv/bin/pip install mkdocs-material mkdocs-static-i18n
 sudo systemctl restart fastscript-wiki
+# check both languages answer:
+curl -s http://127.0.0.1:8000/ | grep -o '<html lang="[^"]*"' | head -1
+curl -s http://127.0.0.1:8000/ru/ | grep -o '<html lang="[^"]*"' | head -1
 ```
 
 The `mkdocs serve` service picks files up itself (livereload); restart

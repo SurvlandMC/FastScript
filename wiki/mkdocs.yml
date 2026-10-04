@@ -3,6 +3,17 @@ site_description: Full documentation for the FastScript language — a JIT-compi
 site_author: FastScript
 site_url: http://localhost:8000/
 
+# Language switcher in the header (Material renders it from this list).
+# English is built at /, Russian at /ru/.
+extra:
+  alternate:
+    - name: English
+      link: /
+      lang: en
+    - name: Русский
+      link: /ru/
+      lang: ru
+
 theme:
   name: material
   language: en
