@@ -84,6 +84,8 @@ try_files $uri $uri/ $uri.html =404;
 | 502 Bad Gateway | the service is down — see `journalctl` (usually pip/venv or a busy port; change it via `PORT=9000 sudo -E bash install.sh ...`) |
 | 404 on nested pages | `try_files` is only needed for the static variant; not for proxy |
 | Firewall | `sudo ufw allow 80,443/tcp` |
+| Both `/` and `/ru/` show the same language | stale content: `ls docs/` must show `en/` **and** `ru/` subfolders — a flat `docs/*.md` layout with the i18n config builds one language everywhere. Re-copy fresh `docs/` **and** `mkdocs.yml` from the zip (see step 4), ensure the i18n plugin is in the running env, restart |
+| `site_lang: Unrecognised configuration name` | stale `mkdocs.yml` mixed with the new one — re-copy it from the zip, harmless otherwise |
 
 Local preview without a server (for authors):
 `pip install mkdocs-material mkdocs-static-i18n && mkdocs serve` in `wiki/`.

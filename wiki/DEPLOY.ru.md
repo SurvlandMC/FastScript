@@ -84,6 +84,8 @@ try_files $uri $uri/ $uri.html =404;
 | 502 Bad Gateway | сервис не поднялся — смотреть `journalctl` (обычно pip/venv или занятый порт; порт меняется через `PORT=9000 sudo -E bash install.sh ...`) |
 | 404 на вложенных страницах | `try_files` нужен только для static-варианта, не для proxy |
 | Фаервол | `sudo ufw allow 80,443/tcp` |
+| `/` и `/ru/` показывают один язык | протухший контент: `ls docs/` обязан показать подпапки `en/` **и** `ru/` — плоская раскладка `docs/*.md` с i18n-конфигом собирает один язык везде. Скопируйте свежие `docs/` **и** `mkdocs.yml` из зипа (см. шаг 4), проверьте плагин в рабочем окружении, рестарт |
+| `site_lang: Unrecognised configuration name` | протухший `mkdocs.yml`, смешанный с новым — перекопируйте из зипа, иначе безвредно |
 
 Локальный предпросмотр без сервера (для авторов):
 `pip install mkdocs-material mkdocs-static-i18n && mkdocs serve` в папке `wiki/`.
