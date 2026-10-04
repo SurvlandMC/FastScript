@@ -31,7 +31,11 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-venv nginx cur
 
 echo "==> [2/6] copy wiki sources to ${INSTALL_DIR}"
 mkdir -p "${INSTALL_DIR}"
-cp -r "${SRC_DIR}/mkdocs.yml" "${SRC_DIR}/docs" "${INSTALL_DIR}/"
+# The script may itself live inside the install dir (re-run in place):
+# copying a file onto itself errors out and `set -e` would kill the install.
+if [ "$SRC_DIR" != "$INSTALL_DIR" ]; then
+  cp -r "${SRC_DIR}/mkdocs.yml" "${SRC_DIR}/docs" "${INSTALL_DIR}/"
+fi
 rm -rf "${INSTALL_DIR}/docs/assets/.cache" 2>/dev/null || true
 
 echo "==> [3/6] python venv + mkdocs-material"

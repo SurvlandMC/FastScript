@@ -43,8 +43,8 @@ else
   SRC="$WORK/repo/wiki"
 fi
 
-if [ ! -d "$INSTALL_DIR" ]; then
-  echo "==> no install found at $INSTALL_DIR, running full install from the clone"
+if [ ! -d "$INSTALL_DIR" ] || [ ! -x "$INSTALL_DIR/.venv/bin/python" ]; then
+  echo "==> no working install found at $INSTALL_DIR, running full install from the clone"
   bash "$SRC/install.sh" "${1:-wiki.example.com}"
   exit 0
 fi
