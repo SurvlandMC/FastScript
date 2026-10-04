@@ -39,7 +39,7 @@ if [ ! -x "${INSTALL_DIR}/.venv/bin/python" ]; then
   python3 -m venv "${INSTALL_DIR}/.venv"
 fi
 "${INSTALL_DIR}/.venv/bin/pip" install --upgrade pip
-"${INSTALL_DIR}/.venv/bin/pip" install "mkdocs-material" "mkdocs-static-i18n"
+"${INSTALL_DIR}/.venv/bin/pip" install "mkdocs-material" "mkdocs-static-i18n>=1.0"
 
 echo "==> [4/6] verify build"
 "${INSTALL_DIR}/.venv/bin/mkdocs" build -f "${INSTALL_DIR}/mkdocs.yml" -d /tmp/fastscript-wiki-check
@@ -52,7 +52,8 @@ systemctl daemon-reload
 systemctl enable --now "${SERVICE_NAME}"
 sleep 2
 curl -fsS "http://127.0.0.1:${PORT}/" >/dev/null
-echo "    service answers on 127.0.0.1:${PORT}"
+curl -fsS "http://127.0.0.1:${PORT}/ru/" >/dev/null
+echo "    service answers on 127.0.0.1:${PORT} in both languages (/, /ru/)"
 
 echo "==> [6/6] nginx reverse proxy for ${DOMAIN}"
 sed -e "s#__DOMAIN__#${DOMAIN}#g" -e "s#__PORT__#${PORT}#g" \

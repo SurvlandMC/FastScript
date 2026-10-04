@@ -57,6 +57,7 @@ markdown_extensions:
 plugins:
   - search
   - i18n:
+      docs_structure: folder
       default_language: en
       languages:
         en: English
