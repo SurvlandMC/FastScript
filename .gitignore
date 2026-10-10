@@ -22,3 +22,7 @@ __pycache__/
 *~
 Thumbs.db
 Desktop.ini
+
+# Local release workflow (per-machine helpers, never committed)
+RELEASE_NOTES.txt
+release.ps1
