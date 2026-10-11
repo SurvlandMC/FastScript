@@ -147,9 +147,10 @@ public final class ExecContext {
     /** Builtin {@code arg(n)}: the n-th positional command argument, one-based by convention. */
     public String argument(double index) {
         int position = (int) index;
-        Object value = arg(position);
-        if (value == null && position > 0) {
-            value = arg(position - 1);
+        // Positional arguments start at args[2]: args[0]=sender, args[1]=event (null for commands).
+        Object value = arg(position + 1);
+        if (value == null && position > 1) {
+            value = arg(position);
         }
         return Values.toText(value);
     }
