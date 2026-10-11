@@ -26,3 +26,6 @@ Desktop.ini
 # Local release workflow (per-machine helpers, never committed)
 RELEASE_NOTES.txt
 release.ps1
+
+# Local agent handbook (per-machine context, never committed)
+AGENTS.md
