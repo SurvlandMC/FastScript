@@ -3,8 +3,10 @@ package io.github.dsh.fastscript.plugin;
 import io.github.dsh.fastscript.core.Values;
 import io.github.dsh.fastscript.engine.ScriptEngine;
 import io.github.dsh.fastscript.runtime.CommandSpec;
+import io.github.dsh.fastscript.runtime.ScriptHandle;
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -13,6 +15,7 @@ import java.util.List;
 import java.util.Locale;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
+import org.bukkit.command.CommandMap;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.command.TabExecutor;
@@ -21,6 +24,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
+import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /**
@@ -40,11 +44,21 @@ public final class FastScriptPlugin extends JavaPlugin implements Listener, TabE
     private ScriptEngine engine;
     private PluginHost host;
     private final List<String> boundCommands = new ArrayList<>();
+    private CommandMap commandMap;
 
     @Override
     public void onEnable() {
         host = new PluginHost(this);
         engine = new ScriptEngine(host);
+
+        // Get CommandMap via reflection (works on Bukkit/Paper/Leaf)
+        try {
+            Field field = Bukkit.getServer().getClass().getDeclaredField("commandMap");
+            field.setAccessible(true);
+            commandMap = (CommandMap) field.get(Bukkit.getServer());
+        } catch (ReflectiveOperationException e) {
+            getLogger().warning("Could not access CommandMap: " + e.getMessage());
+        }
 
         createDefaultScriptIfMissing();
         loadVariables();
@@ -127,31 +141,81 @@ public final class FastScriptPlugin extends JavaPlugin implements Listener, TabE
     // ------------------------------------------------------------------ command binding
 
     private void bindCommands() {
+        if (commandMap == null) {
+            getLogger().warning("CommandMap not available, commands will not work without plugin.yml declarations");
+            return;
+        }
         for (CommandSpec spec : engine.commandSpecs()) {
-            PluginCommand command = getCommand(spec.name());
-            if (command == null) {
-                getLogger().warning("script command '/" + spec.name()
-                        + "' is not declared in plugin.yml; add it there to make it available");
-                continue;
-            }
-            command.setExecutor(this);
-            command.setTabCompleter(this);
+            String name = spec.name().toLowerCase(Locale.ROOT);
+            // Unregister any existing command with this name first
+            unregisterCommand(name);
+            
+            // Create a dynamic command that delegates to the plugin's onCommand
+            DynamicCommand command = new DynamicCommand(name, this);
+            command.setDescription("Script command: " + name);
+            command.setUsage("/" + name + (spec.arguments().isBlank() ? "" : " <args>"));
             if (spec.permission() != null && !spec.permission().isBlank()) {
                 command.setPermission(spec.permission());
             }
-            boundCommands.add(spec.name());
+            
+            // Register with CommandMap
+            commandMap.register("FastScript", command);
+            boundCommands.add(name);
         }
     }
 
     private void unbindCommands() {
+        if (commandMap == null) {
+            return;
+        }
         for (String name : boundCommands) {
-            PluginCommand command = getCommand(name);
-            if (command != null) {
-                command.setExecutor(null);
-                command.setTabCompleter(null);
-            }
+            unregisterCommand(name);
         }
         boundCommands.clear();
+    }
+
+    /** Removes a command from the CommandMap by name. */
+    private void unregisterCommand(String name) {
+        try {
+            // CommandMap uses a Map<String, Command> internally called knownCommands
+            Field knownCommandsField = commandMap.getClass().getDeclaredField("knownCommands");
+            knownCommandsField.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Command> knownCommands = (java.util.Map<String, Command>) knownCommandsField.get(commandMap);
+            knownCommands.remove(name);
+            
+            // Also remove aliases
+            Field knownAliasesField = commandMap.getClass().getDeclaredField("knownAliases");
+            knownAliasesField.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, String> knownAliases = (java.util.Map<String, String>) knownAliasesField.get(commandMap);
+            knownAliases.entrySet().removeIf(entry -> entry.getValue().equals(name));
+        } catch (ReflectiveOperationException e) {
+            getLogger().warning("Failed to unregister command '" + name + "': " + e.getMessage());
+        }
+    }
+
+    /**
+     * A dynamically registered command that delegates to the plugin's TabExecutor.
+     * This allows script commands to work without plugin.yml declarations.
+     */
+    private static final class DynamicCommand extends Command {
+        private final TabExecutor executor;
+
+        DynamicCommand(String name, TabExecutor executor) {
+            super(name);
+            this.executor = executor;
+        }
+
+        @Override
+        public boolean execute(CommandSender sender, String commandLabel, String[] args) {
+            return executor.onCommand(sender, this, commandLabel, args);
+        }
+
+        @Override
+        public List<String> tabComplete(CommandSender sender, String alias, String[] args) {
+            return executor.onTabComplete(sender, this, alias, args);
+        }
     }
 
     // ------------------------------------------------------------------ events
